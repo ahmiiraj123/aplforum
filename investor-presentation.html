@@ -579,13 +579,13 @@
         delBtn.style.border = "none";
         delBtn.style.cursor = "pointer";
         delBtn.style.fontSize = "12px";
-        delBtn.style.display = "none";
+        delBtn.style.display = "block";
 
         wrapper.appendChild(imgElem);
         wrapper.appendChild(delBtn);
 
         wrapper.addEventListener("mouseenter", () => { delBtn.style.display = "block"; });
-        wrapper.addEventListener("mouseleave", () => { delBtn.style.display = "none"; });
+        wrapper.addEventListener("mouseleave", () => { delBtn.style.display = "block"; });
         delBtn.addEventListener("click", () => {
           savedSignatures.splice(index, 1);
           localStorage.setItem("savedSignatures", JSON.stringify(savedSignatures));
