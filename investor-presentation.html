@@ -281,6 +281,52 @@
       }
       .saved-signatures img { width: 50px; }
     }
+
+
+
+
+
+
+
+
+
+#pdf-loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  font-size: 18px;
+  color: #333;
+  z-index: 9999;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #ccc;
+  border-top-color: #004aad;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+
+
+
+
   </style>
 </head>
 <body>
@@ -354,6 +400,16 @@
       </div>
     </div>
   </div>
+
+
+
+<div id="pdf-loader">
+  <div class="spinner"></div>
+  <p>Loading PDF...</p>
+</div>
+
+
+
 
   <script>
     /* ===== PDF Rendering & Navigation ===== */
@@ -450,11 +506,15 @@
       pages.forEach(page => observer.observe(page));
     }
 
-    pdfjsLib.getDocument(url).promise.then(function(pdf) {
-      pdfDoc = pdf;
-      renderAllPages();
-      generateThumbnails();
-    });
+   document.getElementById("pdf-loader").style.display = "flex"; // Show loader
+
+pdfjsLib.getDocument(url).promise.then(function(pdf) {
+  pdfDoc = pdf;
+  renderAllPages();
+  generateThumbnails();
+  document.getElementById("pdf-loader").style.display = "none"; // Hide loader when PDF loads
+});
+
 
     function toggleFullScreen() {
       document.fullscreenElement
@@ -578,7 +638,8 @@
         delBtn.style.color = "#fff";
         delBtn.style.border = "none";
         delBtn.style.cursor = "pointer";
-        delBtn.style.fontSize = "12px";
+        delBtn.style.fontSize = "18px";
+        delBtn.style.padddng = "10px";
         delBtn.style.display = "block";
 
         wrapper.appendChild(imgElem);
