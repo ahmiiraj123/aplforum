@@ -1,27 +1,929 @@
-
-
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>APLF</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Accomacs Investors</title>
+  <!-- Bootstrap CSS and Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet" />
+  <!-- PDF.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <!-- pdf-lib for editing original PDF -->
+  <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+  <!-- jsPDF for PDF download -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    /* Reset & Base */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background: #f7f7f7;
+      color: #333;
+      display: flex;
+      /* Removed height: 100vh; to follow user instruction. */
+      overflow: hidden;
+      height: 100%; /* Alternatively, or just let the content expand. */
+    }
+
+    /* Sidebar (Thumbnails) */
+    .sidebar {
+      position: fixed;
+      top: 70px; /* below header */
+      right: 0;
+      width: 150px;
+      bottom: 0;
+      background: #222;
+      color: #fff;
+      overflow-y: auto;
+      padding: 10px 5px;
+      transition: transform 0.3s ease;
+      z-index: 1000;
+    }
+    @media (max-width: 600px) {
+      .sidebar {
+        width: 40%;
+        z-index: 1200;
+        transform: translateX(100%);
+      }
+      .sidebar.active { transform: translateX(0); }
+      .thumbnail-wrapper canvas { width: 80px; }
+    }
+    .thumbnail-wrapper canvas {
+      max-width: 100px;
+      width: 100%;
+    }
+    .thumbnail-wrapper {
+      text-align: center;
+      margin-bottom: 10px;
+      cursor: pointer;
+    }
+    .thumbnail-wrapper div {
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    /* Header with Controls & Saved Signatures */
+    .header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      z-index: 1100;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .controls button {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 6px 12px;
+      border: none;
+      background: #004aad;
+      color: #fff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    .controls input[type="number"] {
+      width: 60px;
+      padding: 4px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .saved-signatures {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+    .saved-signatures strong {
+      white-space: nowrap;
+      font-size: 14px;
+    }
+    .saved-signatures img {
+      width: 60px;
+      height: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    /* Sidebar Toggle Button for Mobile (on Right) */
+    .sidebar-toggle {
+      display: none;
+      position: fixed;
+      top: 10px;
+      right: 10px !important;
+      z-index: 1200;
+      background: #004aad;
+      color: #fff;
+      border: none;
+      padding: 8px;
+      border-radius: 4px;
+    }
+    @media (max-width: 600px) {
+      .sidebar-toggle { display: block; }
+    }
+
+    /* Main PDF Container */
+    #pdf-container {
+      position: absolute;
+      top: 70px; /* below header */
+      left: 10px;
+      right: 0;
+      bottom: 0;
+      overflow: auto; /* we'll handle panning manually */
+      background: #eee;
+      transition: padding-top 0.3s ease;
+    }
+    /* On desktop, leave space for sidebar */
+    @media (min-width: 601px) {
+      #pdf-container { margin-right: 150px; }
+    }
+    /* On mobile, add extra top margin to account for stacked header */
+    @media (max-width: 600px) {
+      #pdf-container { padding-top: 50px; }
+    }
+
+    /* The actual viewport that we scale and pan */
+    #pdf-viewport {
+      position: relative;
+      transform-origin: 0 0; /* top-left origin */
+    }
+
+    .pdf-page {
+      position: relative;
+      margin-bottom: 20px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      padding: 0px;
+      border: 1px solid black;
+    }
+    .pdf-page canvas {
+      width: 100%;
+      display: block;
+      margin: 0 auto;
+    }
+
+    /* Signature Overlay on PDF Page */
+    .signature-container {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      border: 1px dashed #333;
+      cursor: move;
+      touch-action: none;
+    }
+    .signature-container img {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .signature-container button.delete-btn {
+      position: absolute;
+      top: 0;
+      right: 0;
+      background: #f00;
+      color: #fff;
+      border: none;
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0 4px;
+    }
+    .resize-handle {
+      width: 12px;
+      height: 12px;
+      background: #fff;
+      border: 1px solid #333;
+      position: absolute;
+      right: -6px;
+      bottom: -6px;
+      cursor: se-resize;
+      touch-action: none;
+    }
+
+    /* Signature Drawing Modal */
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 2000;
+    }
+    .modal-content {
+      background: #fff;
+      padding: 20px 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      text-align: center;
+      width: 420px;
+    }
+    .modal-content h3 { margin-bottom: 10px; }
+    .modal-content canvas {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      display: block;
+      margin: 10px auto;
+      touch-action: none;
+    }
+    .modal-buttons {
+      margin-top: 10px;
+      display: flex;
+      gap: 10px;
+      justify-content: space-around;
+    }
+    .modal-buttons button {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .btn-undo { background: #004aad; color: #fff; }
+    .btn-redo { background: #004aad; color: #fff; }
+    .btn-confirm { background: #004aad; color: #fff; }
+    .btn-cancel { background: #004aad; color: #fff; }
+
+    /* Mobile Adjustments for Header */
+    @media (max-width: 600px) {
+      .header {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 10px 60px;
+      }
+      .controls {
+        margin-bottom: 10px;
+        justify-content: center;
+      }
+      .controls button, .controls input[type="number"] {
+        font-size: 14px;
+        padding: 4px 8px;
+      }
+      .saved-signatures img { width: 50px; }
+    }
+
+
+
+
+
+
+
+
+
+#pdf-loader {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-direction: column;
+  font-size: 18px;
+  color: #333;
+  z-index: 9999;
+}
+
+.spinner {
+  width: 50px;
+  height: 50px;
+  border: 5px solid #ccc;
+  border-top-color: #004aad;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 10px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+
+
+
+
+
+  </style>
 </head>
 <body>
-  <iframe 
-    src="https://script.google.com/macros/s/AKfycbz4EIAsaHNvKpRoX5WW227zSrOkd-OtowYLxHz-93bz7EOgts9-DEP6Vymxt3EXt8_jmg/exec"
-    width="100%"
-    height="100%"
-    allowfullscreen="true"
-    style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none;">
-  </iframe>
+  <!-- Sidebar Toggle Button for Mobile (on Right) -->
+  <button id="sidebarToggle" class="sidebar-toggle">
+    <i class="bi bi-list"></i>
+  </button>
+
+  <!-- Sidebar with Thumbnails -->
+  <div class="sidebar" id="sidebar">
+    <div id="thumbnailContainer"></div>
+  </div>
+
+  <!-- Header with Controls & Saved Signatures -->
+  <div class="header">
+    <div class="controls">
+      <button onclick="toggleFullScreen()" title="Fullscreen">
+        <i class="bi bi-arrows-fullscreen"></i> Fullscreen
+      </button>
+      <button onclick="openSignatureModal()" title="Sign">
+        <i class="bi bi-pencil-square"></i> Sign
+      </button>
+      <button onclick="downloadPDF()" title="Download">
+        <i class="bi bi-download"></i> Download
+      </button>
+      <input type="number" id="pageInput" min="1" value="1" title="Page Number" />
+      <button onclick="jumpToPage()" title="Go">
+        <i class="bi bi-arrow-right"></i> Go
+      </button>
+      <!-- New Zoom & Pan Controls -->
+      <button onclick="zoomIn()" title="Zoom In">
+        <i class="bi bi-zoom-in"></i> Zoom In
+      </button>
+      <button onclick="zoomOut()" title="Zoom Out">
+        <i class="bi bi-zoom-out"></i> Zoom Out
+      </button>
+      <button id="panToggle" onclick="togglePanMode()" title="Pan Mode">
+        <i class="bi bi-hand-index"></i> Pan Mode: Off
+      </button>
+    </div>
+    <div class="saved-signatures" id="savedSignatures">
+      <strong>Saved Signatures:</strong>
+      <!-- Saved signatures will appear here -->
+    </div>
+  </div>
+
+  <!-- Main PDF Container -->
+  <div id="pdf-container">
+    <!-- This is the wrapper that will be scaled & panned -->
+    <div id="pdf-viewport"></div>
+  </div>
+
+  <!-- Signature Drawing Modal -->
+  <div id="signatureModal" class="modal">
+    <div class="modal-content">
+      <h3>Draw Your Signature</h3>
+      <canvas id="signaturePad" width="300" height="150"></canvas>
+      <div class="modal-buttons">
+        <button class="btn-undo" onclick="undoSignature()" title="Undo">
+          <i class="bi bi-arrow-counterclockwise"></i> Undo
+        </button>
+        <button class="btn-redo" onclick="redoSignature()" title="Redo">
+          <i class="bi bi-arrow-clockwise"></i> Redo
+        </button>
+        <button class="btn-confirm" onclick="confirmSignature()" title="Confirm">
+          <i class="bi bi-check-lg"></i> Confirm
+        </button>
+        <button class="btn-cancel" onclick="closeSignatureModal()" title="Cancel">
+          <i class="bi bi-x-lg"></i> Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+
+<div id="pdf-loader">
+  <div class="spinner"></div>
+  <p>Loading PDF...</p>
+</div>
+
+
+
 
   <script>
-    window.onload = function() {
-      document.querySelector('iframe')
-        .requestFullscreen()
-        .catch((err) => {
-          console.error('Error attempting to enable full-screen mode:', err.message);
+    /* ===== PDF Rendering & Navigation ===== */
+    var url = "https://raw.githubusercontent.com/ahmiiraj123/aplforum/main/Accomac%20investors.pdf";
+    var pdfDoc = null;
+    var pdfViewport = document.getElementById("pdf-viewport");
+    var pdfContainer = document.getElementById("pdf-container");
+    var thumbnailContainer = document.getElementById("thumbnailContainer");
+    var pageInput = document.getElementById("pageInput");
+    var savedSignaturesPanel = document.getElementById("savedSignatures");
+
+    function renderAllPages() {
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        pdfDoc.getPage(i).then(function(page) {
+          var scale = 1.5;
+          var viewport = page.getViewport({ scale: scale });
+          var canvas = document.createElement("canvas");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.setAttribute("data-scale", scale);
+
+          var ctx = canvas.getContext("2d");
+          var renderContext = { canvasContext: ctx, viewport: viewport };
+
+          var pageDiv = document.createElement("div");
+          pageDiv.className = "pdf-page";
+          pageDiv.appendChild(canvas);
+
+          // Enable drop events on PDF page for signatures.
+          pageDiv.addEventListener("dragover", function(e) { e.preventDefault(); });
+          pageDiv.addEventListener("drop", function(e) {
+            e.preventDefault();
+            if(e.dataTransfer.getData("source") === "saved") {
+              var sigData = e.dataTransfer.getData("signatureData");
+              var dropX = e.offsetX;
+              var dropY = e.offsetY;
+              addSignatureToPageAt(pageDiv, sigData, dropX, dropY);
+            }
+          });
+
+          // Append each page into #pdf-viewport
+          pdfViewport.appendChild(pageDiv);
+
+          page.render(renderContext);
         });
-    };
+      }
+      observePages();
+    }
+
+    async function generateThumbnails() {
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        const page = await pdfDoc.getPage(i);
+        const scale = 0.2;
+        const viewport = page.getViewport({ scale: scale });
+        const canvas = document.createElement("canvas");
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext("2d");
+        const renderContext = { canvasContext: ctx, viewport: viewport };
+        await page.render(renderContext).promise;
+
+        canvas.classList.add("thumbnail");
+        const wrapper = document.createElement("div");
+        wrapper.classList.add("thumbnail-wrapper");
+        wrapper.onclick = () => { jumpToPage(i); };
+        const pageNumDiv = document.createElement("div");
+        pageNumDiv.textContent = "Page " + i;
+
+        wrapper.appendChild(canvas);
+        wrapper.appendChild(pageNumDiv);
+        thumbnailContainer.appendChild(wrapper);
+      }
+    }
+
+    function jumpToPage(pageNumber) {
+      var pageNum = pageNumber || parseInt(pageInput.value);
+      var pages = pdfViewport.children; // each .pdf-page is a child of pdfViewport
+      if (pageNum >= 1 && pageNum <= pages.length) {
+        pages[pageNum - 1].scrollIntoView({ behavior: "smooth" });
+      }
+    }
+
+    // Use Intersection Observer to update jump-to-page input dynamically.
+    function observePages() {
+      const pages = document.querySelectorAll('.pdf-page');
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if(entry.isIntersecting) {
+            const index = Array.from(pages).indexOf(entry.target);
+            pageInput.value = index + 1;
+          }
+        });
+      }, { threshold: 0.5 });
+      pages.forEach(page => observer.observe(page));
+    }
+
+   document.getElementById("pdf-loader").style.display = "flex"; // Show loader
+
+pdfjsLib.getDocument(url).promise.then(function(pdf) {
+  pdfDoc = pdf;
+  renderAllPages();
+  generateThumbnails();
+  document.getElementById("pdf-loader").style.display = "none"; // Hide loader when PDF loads
+});
+
+
+    function toggleFullScreen() {
+      document.fullscreenElement
+        ? document.exitFullscreen()
+        : document.documentElement.requestFullscreen();
+    }
+
+    /* ===== Sidebar Toggle for Mobile ===== */
+    var sidebarToggle = document.getElementById("sidebarToggle");
+    var sidebar = document.getElementById("sidebar");
+    sidebarToggle.addEventListener("click", function(e) {
+      sidebar.classList.toggle("active");
+    });
+    document.addEventListener("click", function(e) {
+      if (window.innerWidth <= 600) {
+        if (!sidebar.contains(e.target) && !e.target.closest("#sidebarToggle")) {
+          sidebar.classList.remove("active");
+        }
+      }
+    });
+
+    /* ===== Signature Drawing Modal (Undo/Redo) ===== */
+    var signatureModal = document.getElementById("signatureModal");
+    var signaturePad = document.getElementById("signaturePad");
+    var signatureCtx = signaturePad.getContext("2d");
+    var drawing = false, lastX = 0, lastY = 0;
+    var undoStack = [];
+    var redoStack = [];
+
+    signaturePad.style.touchAction = "none";
+
+    signaturePad.addEventListener("pointerdown", function(e) {
+      drawing = true;
+      const rect = signaturePad.getBoundingClientRect();
+      lastX = e.clientX - rect.left;
+      lastY = e.clientY - rect.top;
+      signaturePad.setPointerCapture(e.pointerId);
+    });
+    signaturePad.addEventListener("pointermove", function(e) {
+      if (!drawing) return;
+      const rect = signaturePad.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      signatureCtx.strokeStyle = "#000";
+      signatureCtx.lineWidth = 2;
+      signatureCtx.lineJoin = "round";
+      signatureCtx.lineCap = "round";
+      signatureCtx.beginPath();
+      signatureCtx.moveTo(lastX, lastY);
+      signatureCtx.lineTo(x, y);
+      signatureCtx.stroke();
+      lastX = x;
+      lastY = y;
+    });
+    signaturePad.addEventListener("pointerup", function(e) {
+      if (drawing) {
+        drawing = false;
+        pushSignatureState();
+      }
+      signaturePad.releasePointerCapture(e.pointerId);
+    });
+    signaturePad.addEventListener("pointerout", function(e) {
+      if (drawing) {
+        drawing = false;
+        pushSignatureState();
+      }
+    });
+
+    function pushSignatureState() {
+      undoStack.push(signaturePad.toDataURL());
+      redoStack = [];
+    }
+    function undoSignature() {
+      if (undoStack.length > 1) {
+        redoStack.push(undoStack.pop());
+        let imgData = undoStack[undoStack.length - 1];
+        let img = new Image();
+        img.onload = function() {
+          signatureCtx.clearRect(0, 0, signaturePad.width, signaturePad.height);
+          signatureCtx.drawImage(img, 0, 0);
+        };
+        img.src = imgData;
+      }
+    }
+    function redoSignature() {
+      if (redoStack.length > 0) {
+        let imgData = redoStack.pop();
+        undoStack.push(imgData);
+        let img = new Image();
+        img.onload = function() {
+          signatureCtx.clearRect(0, 0, signaturePad.width, signaturePad.height);
+          signatureCtx.drawImage(img, 0, 0);
+        };
+        img.src = imgData;
+      }
+    }
+
+    /* ===== Saved Signatures Management ===== */
+    var savedSignatures = JSON.parse(localStorage.getItem("savedSignatures")) || [];
+
+    function updateSavedSignaturesPanel() {
+      savedSignaturesPanel.querySelectorAll("div.saved-signature-wrapper").forEach(el => el.remove());
+      savedSignatures.forEach((sigData, index) => {
+        var wrapper = document.createElement("div");
+        wrapper.className = "saved-signature-wrapper";
+        wrapper.style.position = "relative";
+        wrapper.style.display = "inline-block";
+
+        var imgElem = document.createElement("img");
+        imgElem.src = sigData;
+        imgElem.className = "saved-signature";
+        imgElem.draggable = false;
+        enableSavedSignatureDrag(imgElem, sigData);
+
+        var delBtn = document.createElement("button");
+        delBtn.textContent = "×";
+        delBtn.style.position = "absolute";
+        delBtn.style.top = "0";
+        delBtn.style.right = "0";
+        delBtn.style.background = "#f00";
+        delBtn.style.color = "#fff";
+        delBtn.style.border = "none";
+        delBtn.style.cursor = "pointer";
+        delBtn.style.fontSize = "18px";
+        delBtn.style.padddng = "10px";
+        delBtn.style.display = "block";
+
+        wrapper.appendChild(imgElem);
+        wrapper.appendChild(delBtn);
+
+        wrapper.addEventListener("mouseenter", () => { delBtn.style.display = "block"; });
+        wrapper.addEventListener("mouseleave", () => { delBtn.style.display = "block"; });
+        delBtn.addEventListener("click", () => {
+          savedSignatures.splice(index, 1);
+          localStorage.setItem("savedSignatures", JSON.stringify(savedSignatures));
+          updateSavedSignaturesPanel();
+        });
+        savedSignaturesPanel.appendChild(wrapper);
+      });
+    }
+    updateSavedSignaturesPanel();
+
+    function confirmSignature() {
+      var signatureData = signaturePad.toDataURL();
+      savedSignatures.push(signatureData);
+      localStorage.setItem("savedSignatures", JSON.stringify(savedSignatures));
+      updateSavedSignaturesPanel();
+      closeSignatureModal();
+    }
+
+    function openSignatureModal() {
+      signatureModal.style.display = "flex";
+      signatureCtx.clearRect(0, 0, signaturePad.width, signaturePad.height);
+      undoStack = [];
+      redoStack = [];
+      pushSignatureState();
+    }
+    function closeSignatureModal() {
+      signatureModal.style.display = "none";
+    }
+
+    /* ===== Custom Drag for Saved Signatures ===== */
+    function enableSavedSignatureDrag(elem, sigData) {
+      elem.addEventListener("pointerdown", function(e) {
+        e.preventDefault();
+        let clone = elem.cloneNode(true);
+        clone.style.position = "absolute";
+        clone.style.zIndex = "2000";
+        clone.style.pointerEvents = "none";
+        clone.style.width = elem.offsetWidth + "px";
+        clone.style.height = elem.offsetHeight + "px";
+        document.body.appendChild(clone);
+
+        let rect = elem.getBoundingClientRect();
+        let offsetX = e.clientX - rect.left;
+        let offsetY = e.clientY - rect.top;
+
+        function moveClone(ev) {
+          clone.style.left = (ev.clientX - offsetX) + "px";
+          clone.style.top = (ev.clientY - offsetY) + "px";
+        }
+        moveClone(e);
+        document.addEventListener("pointermove", moveClone);
+
+        function dropClone(ev) {
+          document.removeEventListener("pointermove", moveClone);
+          document.removeEventListener("pointerup", dropClone);
+          let dropTarget = document.elementFromPoint(ev.clientX, ev.clientY);
+          let pdfPage = dropTarget && dropTarget.closest(".pdf-page");
+          if (pdfPage) {
+            let pageRect = pdfPage.getBoundingClientRect();
+            let dropX = ev.clientX - pageRect.left;
+            let dropY = ev.clientY - pageRect.top;
+            addSignatureToPageAt(pdfPage, sigData, dropX, dropY);
+          }
+          clone.remove();
+        }
+        document.addEventListener("pointerup", dropClone);
+      });
+    }
+
+    /* ===== Drag & Drop for Signature Overlays ===== */
+    function makeDraggable(el) {
+      var pos = { left: 0, top: 0, x: 0, y: 0 };
+      el.addEventListener("pointerdown", function(e) {
+        if (e.target.classList.contains("delete-btn") || e.target.classList.contains("resize-handle"))
+          return;
+        e.preventDefault();
+        el.style.zIndex = 1000;
+        pos = {
+          left: el.offsetLeft,
+          top: el.offsetTop,
+          x: e.clientX,
+          y: e.clientY
+        };
+        function pointerMoveHandler(ev) {
+          const dx = ev.clientX - pos.x;
+          const dy = ev.clientY - pos.y;
+          el.style.left = pos.left + dx + "px";
+          el.style.top = pos.top + dy + "px";
+        }
+        function pointerUpHandler() {
+          el.style.zIndex = "";
+          document.removeEventListener("pointermove", pointerMoveHandler);
+          document.removeEventListener("pointerup", pointerUpHandler);
+        }
+        document.addEventListener("pointermove", pointerMoveHandler, { passive: false });
+        document.addEventListener("pointerup", pointerUpHandler);
+      });
+    }
+    function makeResizable(el, handle) {
+      let ratio = el.offsetWidth / el.offsetHeight;
+      var startX, startWidth;
+      handle.addEventListener("pointerdown", function(e) {
+        e.stopPropagation();
+        startX = e.clientX;
+        startWidth = parseInt(window.getComputedStyle(el).width, 10);
+        function pointerMoveResize(ev) {
+          var newWidth = startWidth + ev.clientX - startX;
+          if (newWidth < 50) newWidth = 50;
+          var newHeight = newWidth / ratio;
+          el.style.width = newWidth + "px";
+          el.style.height = newHeight + "px";
+        }
+        function pointerUpResize() {
+          document.documentElement.removeEventListener("pointermove", pointerMoveResize);
+          document.documentElement.removeEventListener("pointerup", pointerUpResize);
+        }
+        document.documentElement.addEventListener("pointermove", pointerMoveResize, { passive: false });
+        document.documentElement.addEventListener("pointerup", pointerUpResize);
+      });
+    }
+
+    /* ===== Add Signature Overlay to PDF Page ===== */
+    function addSignatureToPageAt(pageDiv, imgData, dropX, dropY) {
+      var sigContainer = document.createElement("div");
+      sigContainer.className = "signature-container";
+      sigContainer.style.width = "150px";
+      sigContainer.style.height = "75px";
+      sigContainer.style.left = dropX + "px";
+      sigContainer.style.top = dropY + "px";
+
+      var img = document.createElement("img");
+      img.src = imgData;
+      sigContainer.appendChild(img);
+
+      var delBtn = document.createElement("button");
+      delBtn.textContent = "×";
+      delBtn.className = "delete-btn";
+      delBtn.addEventListener("click", function() {
+        pageDiv.removeChild(sigContainer);
+      });
+      sigContainer.appendChild(delBtn);
+
+      var resizeHandle = document.createElement("div");
+      resizeHandle.className = "resize-handle";
+      sigContainer.appendChild(resizeHandle);
+
+      pageDiv.appendChild(sigContainer);
+
+      makeDraggable(sigContainer);
+      makeResizable(sigContainer, resizeHandle);
+    }
+
+    /* ===== DOWNLOAD PDF (FIXED OFFSET, ADJUSTED FOR ZOOM) ===== */
+    async function downloadPDF() {
+      // Load original PDF
+      const pdfBytes = await fetch(url).then(res => res.arrayBuffer());
+      const pdfDocLib = await PDFLib.PDFDocument.load(pdfBytes);
+
+      const pages = pdfViewport.children;
+      for (let i = 0; i < pages.length; i++) {
+        const pageDiv = pages[i];
+        const pdfPage = pdfDocLib.getPage(i);
+        const { width: pdfWidth, height: pdfHeight } = pdfPage.getSize();
+
+        // The canvas we used to render the PDF page:
+        const canvas = pageDiv.querySelector("canvas");
+        if (!canvas) continue;
+
+        // Because #pdf-viewport is scaled, we need the original canvas size
+        const scaleApplied = currentScale;
+        const canvasRect = canvas.getBoundingClientRect();
+        const originalCanvasWidth = canvasRect.width / scaleApplied;
+        const originalCanvasHeight = canvasRect.height / scaleApplied;
+        const scaleX = pdfWidth / originalCanvasWidth;
+        const scaleY = pdfHeight / originalCanvasHeight;
+
+        // Loop through each signature overlay
+        const overlays = pageDiv.querySelectorAll(".signature-container");
+        for (let overlay of overlays) {
+          const overlayRect = overlay.getBoundingClientRect();
+
+          // Convert DOM coords to unscaled offset
+          const offsetX = (overlayRect.left - canvasRect.left) / scaleApplied;
+          const offsetY = (overlayRect.top - canvasRect.top) / scaleApplied;
+          const overlayW = overlayRect.width / scaleApplied;
+          const overlayH = overlayRect.height / scaleApplied;
+
+          // Convert DOM coords to PDF coords
+          const pdfOverlayX = offsetX * scaleX;
+          const pdfOverlayY = pdfHeight - (offsetY + overlayH) * scaleY;
+          const pdfOverlayW = overlayW * scaleX;
+          const pdfOverlayH = overlayH * scaleY;
+
+          // Embed the signature image
+          const imgUrl = overlay.querySelector("img").src;
+          const signatureImageBytes = await fetch(imgUrl).then(r => r.arrayBuffer());
+          const embeddedImage = await pdfDocLib.embedPng(signatureImageBytes);
+
+          pdfPage.drawImage(embeddedImage, {
+            x: pdfOverlayX,
+            y: pdfOverlayY,
+            width: pdfOverlayW,
+            height: pdfOverlayH
+          });
+        }
+      }
+
+      // Save and download
+      const modifiedPdfBytes = await pdfDocLib.save();
+      const blob = new Blob([modifiedPdfBytes], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "signed.pdf";
+      link.click();
+    }
+
+    /* ===== Global Zoom & Pan Functionality ===== */
+    let currentScale = 1;
+    let panX = 0, panY = 0;
+    let panMode = false;
+    let isPanning = false, startX = 0, startY = 0;
+
+    function updateTransform() {
+      // We apply transform to #pdf-viewport, not #pdf-container
+      pdfViewport.style.transform = `translate(${panX}px, ${panY}px) scale(${currentScale})`;
+    }
+
+    function zoomIn() {
+      currentScale = Math.min(currentScale + 0.1, 3);
+      updateTransform();
+    }
+    function zoomOut() {
+      currentScale = Math.max(currentScale - 0.1, 0.5);
+      updateTransform();
+    }
+    function togglePanMode() {
+      panMode = !panMode;
+      document.getElementById("panToggle").innerHTML = panMode 
+        ? '<i class="bi bi-hand-index"></i> Pan Mode: On'
+        : '<i class="bi bi-hand-index"></i> Pan Mode: Off';
+      pdfContainer.style.cursor = panMode ? "grab" : "default";
+    }
+
+    // Zoom on ctrl+wheel over the PDF container
+    pdfContainer.addEventListener("wheel", function(e) {
+      if(e.ctrlKey) {
+        e.preventDefault();
+        let zoomDelta = -e.deltaY * 0.001;
+        currentScale = Math.min(Math.max(currentScale + zoomDelta, 0.5), 3);
+        updateTransform();
+      }
+    });
+
+    // Pan only if Pan Mode is active
+    pdfContainer.addEventListener("pointerdown", function(e) {
+      if(!panMode) return;
+      isPanning = true;
+      startX = e.clientX - panX;
+      startY = e.clientY - panY;
+      pdfContainer.style.cursor = "grabbing";
+    });
+    pdfContainer.addEventListener("pointermove", function(e) {
+      if(!panMode || !isPanning) return;
+      panX = e.clientX - startX;
+      panY = e.clientY - startY;
+      updateTransform();
+    });
+    pdfContainer.addEventListener("pointerup", function(e) {
+      if(!panMode) return;
+      isPanning = false;
+      pdfContainer.style.cursor = "grab";
+    });
+    pdfContainer.addEventListener("pointerleave", function(e) {
+      if(!panMode) return;
+      isPanning = false;
+      pdfContainer.style.cursor = "grab";
+    });
   </script>
 </body>
 </html>
